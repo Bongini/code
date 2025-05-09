@@ -1,0 +1,1390 @@
+---
+title: "phylogenetic_code"
+author: "Sandra"
+date: "2025-02-12"
+output: html_document
+---
+
+# Phylogenetic tree construction
+
+## Packages
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(Biostrings)
+```
+
+# Importing sequence data
+
+This sequence data file has been made in the original master_code file by merging the sequences from pr2_names and the other sequences not available in this file (see Master_code_v11)
+
+This file also includes 3 edited sequences:
+
+### MG711605_1_1283_U_Oblongichytrium_sp, KX160008_1_1746_U_Oblongichytrium_porteri
+
+Both have an intron in the beginning of the sequence, so I am exporting the sequences into Geneious and removing the beginning. I have removed 227 bps from MG711605 and 508 bps from KX160008.
+
+### AF304465_1_2101_U_Diplophrys_sp
+
+Has two introns which was removed
+
+### MN382127_1_1072_UC_Phycophthorum_isakeiti
+
+Had ambigueties from 1073-1724. So I only kept the beginning of the sequence to avoid the ambigueties.
+
+```{r}
+
+#Importing the sequence file
+sequences <- read.csv2(file = "raw_data/sequence_data.csv")
+
+#I create a new column to keep track of the sequences removed called "removed_sequence" and another column called "removed_sequence_comment" where I explain WHY the sequence was removed
+
+#Adding two new columns, removed_sequence and removed_sequence_comment.
+sequences <- sequences %>% mutate(removed_sequence = NA)
+sequences <- sequences %>% mutate(removed_sequence_comment = NA)
+```
+
+# Clustering
+
+All the sequences are clustered at 99% identity in VSEARCH. Output clustering results in filename using a tab-separated uclust-like format with 10 columns and 3 different type of entries (S, H or C). Each fasta sequence in the input file can be either a cluster centroid (S) or a hit (H) assigned to a cluster. Cluster records (C) summarize information (size, centroid label) for each cluster
+
+## Exporting sequences for clustering
+
+```{r}
+#seqs_cluster_out <- sequences %>% 
+#select(seq_name,sequence,sequence_length)   
+
+#seqs_out <- Biostrings::DNAStringSet(seqs_cluster_out$sequence)  
+
+#names(seqs_out) <- seqs_cluster_out$seq_name  
+
+#Biostrings::writeXStringSet(seqs_out, "output/seqs_cluster_in.dfasta", compress = FALSE, width=20000)
+```
+
+## Importing clustered sequences
+
+NOTE: the all_seqs_cluster_99.tsv file is the one used for the tree, while the seqs_cluster_99 is a new file. This is because some seqs were added later as reference seqs, but not in the initial clustering. This does not matter for the tree, because the sequence would be included regardless of it being a centroid or hit.
+
+```{r}
+
+seqs_cluster <- read.table("raw_data/seqs_cluster_99.tsv") 
+
+#selecting only the useful columns
+seqs_cluster <- seqs_cluster %>%
+  select(V1,V2,V9,V10)
+
+#renaming the columns
+names(seqs_cluster)[names(seqs_cluster) == "V9"] <- "seq_name"
+#names(seqs_cluster)[names(seqs_cluster) == "V3"] <- "sequence_length"
+names(seqs_cluster)[names(seqs_cluster) == "V10"] <- "center_seq_name"
+
+#All sequences with S in V1 are the cluster centroids
+seqs_S <- seqs_cluster %>%
+  filter(V1 == "S")
+
+#All sequences with H in V1 are the hits assigned to clusters
+#seqs_H <- seqs_cluster %>%filter(V1 == "H")
+
+#removing some duplicates
+seqs_S <- seqs_S %>% distinct(seq_name, .keep_all = TRUE)
+
+seqs_cluster <- seqs_cluster %>%
+  filter(V1 != "C") %>%
+  mutate(center_seq_name = ifelse(center_seq_name == "*", seq_name, center_seq_name))
+
+```
+
+# Removing sequences
+
+### All metagenomes
+
+```{r}
+sequences <- sequences %>%
+  mutate(removed_sequence = ifelse(grepl("metagenome", gb_definition, ignore.case = TRUE), "x", NA))
+
+sequences <- sequences %>%
+  mutate(removed_sequence_comment = ifelse(grepl("metagenome", gb_definition, ignore.case = TRUE), "metagenome", NA))
+```
+
+### All KF66 and KF68
+
+All the KF66 and KF88 sequences originated from the same study done in India.
+
+Omega-3 fatty acid production from enzyme saccharified hemp hydrolysate using a novel marine thraustochytrid strain by Gupta,A., Abraham,R.E., Barrow,C.J. and Puri,M.
+
+```{r}
+#Tagging the KF66/KF68 sequences with x in the removed_sequence column WITHOUT replacing the current x
+sequences <- sequences %>%
+  mutate(removed_sequence = ifelse(
+    grepl("(KF66|KF68)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),
+    "x", removed_sequence))
+
+#Adding comments to the tagged sequences.
+sequences <- sequences %>%
+  mutate(removed_sequence_comment = ifelse(
+    grepl("^(KF66|KF68)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment),
+    "Outliers in tree, all from the same study.", removed_sequence_comment))
+
+```
+
+### All JX9938
+
+All originate from the same paper, done by the same authors of the KF66 sequences.
+
+The sequences have long regions of repeating basepairs, are often outliers or aligns strangely. The BLAST results show around 96% identity, sequences appear to have an intron at the end. (82% query cover to other non-JX9938 sequences).
+
+Pollen baiting facilitates the isolation of marine thraustochytrids with potential in omega-3 and biodiesel by Gupta,A., Abraham,R.E., Barrow,C.J. and Puri,M.production
+
+```{r}
+sequences <- sequences %>%
+  mutate(removed_sequence = ifelse(
+    grepl("(JX9938)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),
+    "x", removed_sequence))
+
+
+sequences <- sequences %>%
+  mutate(removed_sequence_comment = ifelse(
+    grepl("^(JX9938)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment),
+    "Slight outliers in tree, have long regions of repeating bps, originate from the same study.", removed_sequence_comment))
+```
+
+### All OK244
+
+All originating from the same study in India and in the trial 2 tree it made a strange clade together with long branches. BLAST results are around 90% identity.
+
+Decided to remove them all.
+
+![](images/clipboard-2862485564.png)
+
+```{r}
+sequences <- sequences %>%
+  mutate(removed_sequence = ifelse(
+    grepl("(OK244)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),
+    "x", removed_sequence))
+
+#Adding comments to the tagged sequences.
+sequences <- sequences %>%
+  mutate(removed_sequence_comment = ifelse(
+    grepl("(OK244)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment),
+    "Creates an outlier clade in tree", removed_sequence_comment))
+```
+
+### KJ762899_1_1781_U_Aplanochytrium_kerguelense
+
+Outlier in tree. BLAST results showed low per. identity (\<90%), all other results were uncultured eukaryote clone from the same study.
+
+Article: Investigating Microbial Eukaryotic Diversity from a Global Census: Insights from a Comparison of Pyrotag and Full-Length Sequences of 18S rRNA Genes
+
+### AB695493_1_1790_U_Labyrinthulaceae_ANT10_3_sp
+
+Outlier in tree. BLAST results showed low per. identity. Results were all other unclultured eukaryotes or not Labyrinthulomycetes.
+
+Article: Eukaryotic phylotypes in aquatic moss pillars inhabiting a freshwater lake in East Antarctica, based on 18S rRNA gene analysis
+
+### KX771891_1_1723_U_Amphifila_sp
+
+Outlier in tree. BLAST results showed low per. identity (\<83%). Results were all other unclultured eukaryotes or not Labyrinthulomycetes. Direct submission
+
+Article: Microbial communities of the disappearing periglacial environment on top of Mount Kilimanjaro
+
+### AY180038_1_1725_U_Thraustochytriaceae_X_sp
+
+Outlier in tree. BLAST results showed low per. identity (under 80%). From a very old study (2003). Uncultured eukaryote
+
+Article: Novel eukaryotic lineages inferred from small-subunit rRNA analyses of oxygen-depleted marine environments
+
+### GM664571_1_1753_U_Aurantiochytrium_limacinum
+
+Outlier in tree. BLAST results did not show query and the results showed low per. identitiy. No article, just a patent from India.
+
+```{r}
+sequences <- sequences %>%
+  mutate(removed_sequence = ifelse(
+    grepl("(KJ762899|AB695493|KX771891|AY180038|GM664571)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),
+    "x", removed_sequence))
+
+#Adding comments to the tagged sequences.
+sequences <- sequences %>%
+  mutate(removed_sequence_comment = ifelse(
+    grepl("(KJ762899|AB695493|KX771891|AY180038|GM664571)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment),
+    "Outlier in tree, BLAST showed low per. ident and only uncultured eukaryotes", removed_sequence_comment))
+```
+
+### DM372744_1753_1_U_Aurantiochytrium_sp
+
+Creates an outlier in tree. Does not show up when BLASTed, low per. ident. scores. Is a patent
+
+### EU871043_1_1717_U_Aurantiochytrium_sp
+
+Outlier in tree. BLAST show relatively poor per. ident. scores. Is directly submitted, strange sequence. Perhaps has an intron
+
+### FJ004948_1_1651_U_Aurantiochytrium_sp
+
+Outlier in tree. BLAST show relatively poor per. ident. scores. Is directly submitted, strange sequence. Perhaps has an intron
+
+### MT906354_1_1633_U_Aurantiochytrium_sp
+
+Outlier in tree. low per. identity (92%), but still decided to remove it as it is a directly submitted sequence.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(     grepl("(DM372744|EU871043|FJ004948|MT906354)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))  
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(DM372744|EU871043|FJ004948|MT906354)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Creates an outlier clade in tree, does not show up in BLAST, low per. ident", removed_sequence_comment))
+```
+
+### AY082983_1_1879_U_Amphifila_sp
+
+Poor BLAST results, long branching, 83% per identity.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(AY082983)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))  
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(AY082983)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Creates an outlier clade in tree, low per. ident", removed_sequence_comment))
+```
+
+### KX533307_1_1352_U_Oblongichytrium_porteri, KT277636_1_1109_U_Oblongichytrium_porteri
+
+Extreme outlier in tree. Poor BLAST results. From a Chinese paper.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KX533307|KT277636)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))  
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KX533307|KT277636)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Extreme outlier in tree and poor BLAST results", removed_sequence_comment))
+```
+
+### KF718865_1_1433_U_Thraustochytrium_kinnei, KT119409_1_1430_U_Thraustochytrium_kinnei
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KF718865|KT119409)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))  
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KF718865|KT119409)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Extreme outlier in tree and poor BLAST results", removed_sequence_comment))
+```
+
+### DQ834738_1_1539_U_Thraustochytriaceae_X_sp, DQ834732_1_1175_U_Thraustochytriaceae_X_sp, DQ834737_1_1395_U_Thraustochytriaceae_X_sp, DQ834733_1_1419_U_Thraustochytriaceae_X_sp
+
+All outliers together in a very defined clade. Poor BLAST results, all come from the same university in Thailand in 2006.... Directly submitted and no paper. Some appear to have a intron in the beginning.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(DQ834738|DQ834732|DQ834737|DQ834733)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))    
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(DQ834738|DQ834732|DQ834737|DQ834733)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor BLAST results, directly submitted, from 2006 and has regions of repeating bps.", removed_sequence_comment))
+```
+
+### MH059486_1_1333_U_Aurantiochytrium_limacinum
+
+Outlier in tree, poor BLAST results. Indian study
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(MH059486)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))    
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(MH059486)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor BLAST results.", removed_sequence_comment))
+```
+
+### LN558424_1_1039_U_Thraustochytrium_sp, LN558422_1_1138_U_Thraustochytrium_sp
+
+Is from a paper describing it as a novel species, however the sequence does not align properly, it get's chopped up completely. I had to reverse complement them, but still did not work.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(LN558424|LN558422)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(LN558424|LN558422)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, does not align properly, even though it has good BLAST results", removed_sequence_comment))
+```
+
+### KU565329_1_1123_U_Aurantiochytrium_limacinum
+
+Outlier in tree, not the best blast results considering there are so many Aurantiochytrium sequences. Clustered together with the DQ834--, but even after removing those sequences the alignment still looked off, it has a huge gap.
+
+From the paper Strains of heterotrophic microalgae rich in PUFA isolated from Mangalavanam mangrove habitat, Cochin, Kerala.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KU565329)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))      
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KU565329)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor BLAST results, large gap in alignment.", removed_sequence_comment))
+```
+
+### LZ255028_129_1392_U_Aurantiochytrium_sp
+
+Slight outlier in tree, intron in beginning of sequence. Tried to BLAST but does not show up, instead it is identical to the sequence KF668629. Previously we decided to remove all KF66 sequences due to them all being poor and originating from the same study done in India. This was submitted by the same authors, but in a different paper.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(LZ255028)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))      
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(LZ255028)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor BLAST results, large gap in alignment.", removed_sequence_comment))
+```
+
+### KM374685_1_1648_U_Ulkenia_sp, HQ228979_1_1727_U_Ulkenia_sp
+
+Slight outliers, have regions of repeating basepairs, the alignment looks off. BLAST results are relatively good. (94%)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KM374685|HQ228979)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))      
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KM374685|HQ228979)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, medium BLAST results, large gap in alignment.", removed_sequence_comment))
+```
+
+### GU824074_1_1497_U_Labyrinthula_sp, GU825398_1_1244_U_Labyrinthula_sp
+
+Long branching, poor per identity (84%) and query coverage (lower than 80%)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(GU824074|GU825398)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))      
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(GU824074|GU825398)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Extreme Outlier in tree, poor BLAST results", removed_sequence_comment))
+```
+
+### KT716335_1_1142_U_Thraustochytrium_striatum
+
+Outlier in tree, 100% similar to a KF68 sequence, which we have decided to remove all. Suspicious...
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KT716335)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))      
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KT716335)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, regions of repeating bps, is 100% the same as another KF68 sequence. ", removed_sequence_comment))
+```
+
+### DQ023610_1_1721_U_Schizochytrium_sp
+
+Sequence has a lot of substitutions and insertions which shift the sequence. It is also 100% similar to another sequence in Genbank, also from the same study. Otherwise the BLAST results are meh.... Decided to remove because it is outlier in tree.
+
+Unpublished paper
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(DQ023610)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))      
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(DQ023610)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, many insertions, medium BLAST results, identical to another sequence from the same study. ", removed_sequence_comment))
+```
+
+### KP187825_1_1232_U_Oblongichytrium_sp
+
+Outlier in tree, poor blast results for belonging to a clade with many sequences. Alignment has many gaps
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KP187825)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))      
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KP187825)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, medium BLAST results, alignment with many gaps. ", removed_sequence_comment))
+```
+
+### GU823808_1_1104_U_Thraustochytriaceae_LAB17_sp, GU823722_1_1109_U_Thraustochytriaceae_LAB17_sp
+
+Falls outside of LAB17 clade, is an outlier. Poor alignment and BLAST results (below 82% identity). I suspect that these might cause an issue for other sequences as well.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(GU823808|GU823722)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))      
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(GU823808|GU823722)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor BLAST results (82% identity).", removed_sequence_comment))
+```
+
+### GQ330584_1_1488_U_Fibrophrys_sp
+
+Outlier in tree, poor BLAST results (87% identity), poor alignment
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(GQ330584)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))      
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(GQ330584)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor BLAST results (87% identity).", removed_sequence_comment))
+```
+
+### FJ592426_1_1082_U_Amphifilaceae_X_sp
+
+Outlier in tree, poor BLAST results (87% identity), poor alignment
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(FJ592426)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))      
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(FJ592426)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor BLAST results (87% identity).", removed_sequence_comment))
+```
+
+### GU823656_1_1219_U_Labyrinthulomycetes_LAB16_X_sp
+
+Outlier in tree, areas with repeating bps, poor alignment and medium BLAST results.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(GU823656)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))      
+
+#Adding comments to the tagged sequences. 
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(GU823656)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, areas of repeating bps.", removed_sequence_comment))
+```
+
+### EU812508_1_747_U_Fibrophrys_columna
+
+Outlier in tree, has many gaps in alignment, 94 per idenity or below, all the results are "uncultured fungus".
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(EU812508)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(EU812508)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Extreme outlier, BLAST results are all uncultured fungi, alignment has many gaps", removed_sequence_comment))
+```
+
+### FJ389781_1_622_U_Thraustochytriaceae_HK10_sp
+
+Outlier in tree, beginning of sequence has many repeating bps, medium BLAST results (90%)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(FJ389781)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(FJ389781)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier, BLAST results had lower than 90 per. identity, beginning of sequence has repeating bps.", removed_sequence_comment))
+```
+
+### OP808220_1_905_U_Thraustochytriaceae_X_sp
+
+Outlier in tree, and sections of repeating bps
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(OP808220)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(OP808220)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, sections of repeating bps", removed_sequence_comment))
+```
+
+### AY046668_1_1198_U_Amphifilaceae_X_sp
+
+Outlier in tree, intron in beginning and end of sequence. Poor BLAST results (83%)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(AY046668)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(AY046668)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, introns in beginning and end of seq, 83 per. identity in BLAST", removed_sequence_comment))
+```
+
+### JN935797_1_510_U_Aplanochytrium_minutum, JN935779_1_508_U_Aplanochytrium_blankum
+
+Has introns, and when these are removed the sequences are shorter than 500 bps
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(JN935797|JN935779)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(JN935797|JN935779)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, has an intron at the end and beginning", removed_sequence_comment))
+```
+
+### JN675245_1_586_U_Thraustochytriaceae_X_sp, JN675255_1_581_U_Thraustochytriaceae_X_sp
+
+Outliers in tree and poor per. identity. Is part of a study done on Australian thraustochytrids, and both are outliers in the tree in this paper. (Biodiscovery of new Australian thraustochytrids for production of biodiesel and long-chain omega-3 oils). I did an geneious alignment and these two appear to have more indels and repeating regions of bps than the other sequences from this study does. (the bottom row)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(JN675245|JN675255)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(JN675245|JN675255)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor per. identity and has many indels and regions of repeating bps", removed_sequence_comment))
+```
+
+### HQ293270_1_548_U_Amphifila_sp
+
+Extreme outlier, poor BLAST results (78 per. ident).
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(HQ293270)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(HQ293270)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor per. identity (78)", removed_sequence_comment))
+```
+
+### KT252534_1_519_U_Amphifila_sp, KT252522_1_516_U_Amphifila_sp and KT252432_1_516_U_Amphifila_sp
+
+Article: Start-up phase of an anaerobic full-scale farm reactor: How does the methanogenic microbial community establish with the appearance of mesophilic anaerobic conditions?
+
+Decided to remove only the three worst ones, the remaining sequences have all below 95% per identity when BLASTed, but otherwise look fine.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KT252534|KT252522|KT252432)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KT252534|KT252522|KT252432)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor BLAST results", removed_sequence_comment))
+```
+
+### GU923285_1_541_U_Diplophrys_sp, GU922789_1_520_U_Diplophrys_sp
+
+Long branching, with possible chimeras. Low query cover (35%) and poor percent identity scores.
+
+![](images/clipboard-3561469168.png)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(GU923285|GU922789)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(GU92)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching in tree, possible chimera, low query cover when BLASTed", removed_sequence_comment))
+```
+
+### JN675273_1_584_U_Thraustochytrium_kinnei, JN675270_1_589_U_Thraustochytrium_kinnei, JN675253_1_587_U_Thraustochytrium_kinnei, JN675247_1_584_U_Thraustochytrium_kinnei and JN675251_1_586_U_Thraustochytrium_kinnei
+
+The sequences group together to form a clade that are long branching
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(JN675273|JN675270|JN675253|JN675247|JN675251)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(JN675273|JN675270|JN675253|JN675247|JN675251)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching in tree, poor BLAST per identity (below 95%)", removed_sequence_comment))
+```
+
+### OK350
+
+OK350763_1_608_U_Aurantiochytrium_sp, OK350768_1_605_U_Thraustochytriaceae_X_sp, OK350767_1_602_U_Thraustochytriaceae_X_sp, OK350766_1_602_U_Thraustochytriaceae_X_sp, OK350759_1_614_U_Thraustochytriaceae_X_sp, OK350765_1_610_U_Thraustochytriaceae_X_sp, OK350770_1_608_U_Thraustochytriaceae_X_sp, OK350769_1_598_U_Thraustochytriaceae_X_sp, and OK350764_1_602_U_Aurantiochytrium_limacinum
+
+Longbranching clade, BLAST showed low per. identity scores to other sequences not from the same study.
+
+Note: I tried to only remove these, but there was still a clade that existed as an outlier. So I removed more.
+
+OK350759_1_614_U_Thraustochytriaceae_X_sp OK350765_1_610_U_Thraustochytriaceae_X_sp OK350770_1_608_U_Thraustochytriaceae_X_sp OK350769_1_598_U_Thraustochytriaceae_X_sp OK350764_1_602_U_Aurantiochytrium_limacinum
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(OK350763|OK350768|OK350767|OK350766|OK350759|OK350765|OK350770| OK350769|OK350764|OK350759|OK350765|OK350770|OK350769|OK350764)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(OK350763|OK350768|OK350767|OK350766|OK350759|OK350765|OK350770| OK350769|OK350764|OK350759|OK350765|OK350770|OK350769|OK350764)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching in tree, BLAST per identity scores lower than 93%", removed_sequence_comment))
+```
+
+### All LC22
+
+Outliers in tree, only has good BLAST results to other sequences from the same study.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(LC22)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(grepl("(LC22)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Longbranch tree, poor BLAST per identity (85% with other LC22), part of ITS1", removed_sequence_comment))
+```
+
+### EU561694_1_903_U_Labyrinthulomycetes_LAB1_sp
+
+Was already marked as quaranteened by Daniel
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(EU561694)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(EU561694)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, strange BLAST results, is quarantined)", removed_sequence_comment))
+```
+
+### KX688823_1_500_U_Thraustochytrium_sp
+
+Poor alignment, has some sort of intron at the end. Only 34% of the sequence aligns to other sequences when BLASTed
+
+![](images/clipboard-589805478.png)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KX688823)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KX688823)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Poor alignment, only 34% query cover to other sequences)", removed_sequence_comment))
+```
+
+### KC851746_1_560_U_Thraustochytriaceae_SEK690_sp
+
+Outlier in tree, poor alignment and poor BLAST per identity (under 90%)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KC851746)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KC851746)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor alignment, BLAST below 90 per idenity)", removed_sequence_comment))
+```
+
+### KJ513676_1_660_U_Thraustochytrium_motivum
+
+Outlier in tree, poor alignment, poor BLAST per identity results (\<90%)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KJ513676)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KJ513676)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor alignment, BLAST below 90 per idenity)", removed_sequence_comment))
+```
+
+### HQ866194_1_866_U_Schizochytrium_sp
+
+Poor alignment and outlier in tree. BLAST only give good results for other HQ86 sequences, the other sequences are around 80% identity except for MH007312, but the query cover is only 49% for this one.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(HQ866194)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(HQ866194)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor alignment, BLAST below 90 per idenity)", removed_sequence_comment))
+```
+
+### GU972154_1_862_U_Fibrophrys_columna
+
+Outlier in tree, poor alignment. BLAST results are okay, 94% identity, but it is all sequences from the same study "Marine subsurface eukaryotes: the fungal majority"
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(GU972154)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(GU972154)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor alignment, BLAST 94% identity, but mostly sequences from same study...)", removed_sequence_comment))
+```
+
+### JQ242385_1_576_U_Labyrinthulochytrium_arktikum
+
+Poor alignment and BLAST results (\<88% identity)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(JQ242385)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(JQ242385)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor alignment, BLAST results lower than 88% identity)", removed_sequence_comment))
+```
+
+### EU087272_1_885_U_Oblongichytrium_sp
+
+Extreme outlier in tree, poor alignment. BLAST results low per. idenitity (88%) for sequences that are not from the same study
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(EU087272)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(EU087272)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor alignment, BLAST results lower than 88% identity)", removed_sequence_comment))
+```
+
+### DQ073058_1_579_U_Oblongichytrium_porteri
+
+Outlier in tree, poor alignment, poor BLAST per. identity (except from a sequence from the same study). Possible intron in the end
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(EU087272)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(EU087272)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor alignment, BLAST results lower than 90%, intron in the end)", removed_sequence_comment))
+```
+
+### EF100397_1_780_U_Labyrinthulochytrium_arktikum
+
+From a study (**Protistan Diversity in the Arctic: A Case of Paleoclimate Shaping Modern Biodiversity?**) that says it is a novel species, but in the study the sequence does not fall together with the Laby-clade (**D2P03B01**). Rather it is sister group with Jakobidae and Mesodinium.
+
+Outlier in tree, poor BLAST results (87 per. identity), beginning of sequence gets chopped up in alignment.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(EF100397)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(EF100397)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, poor alignment, BLAST results lower than 90%)", removed_sequence_comment))
+```
+
+### JF266572_1_822_U_Aurantiochytrium_sp, JF266573_1_822_U_Aurantiochytrium_sp
+
+Outliers in tree. Both from the same study, but JF266573 is never mentioned in the paper. JF266572 is stated to have a per. identity of 98% to *Aurantiochytrium* sp. LK4 (EU871043), but my BLAST results show only 94%. The end of the sequence has many repeating bps.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(JF266572|JF266573)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(JF266572|JF266573)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, end of sequence has repeating bps. Medium BLAST results (94%))", removed_sequence_comment))
+```
+
+### DQ834736_1_906_U_Thraustochytriaceae_X_sp, DQ525180_1_912_U_Schizochytrium_sp
+
+Outlier in tree, end of sequence have repeating bps, BLAST show low per. identity (\~90%)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(DQ8347362|DQ525180)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(DQ8347362|DQ525180)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, end of sequence has repeating bps. Poor BLAST results (~90%))", removed_sequence_comment))
+```
+
+### AB856527_1_2034_U_Diplophrys_sp
+
+Article: Diplophrys mutabilis sp. nov., a New Member of Labyrinthulomycetes from Freshwater Habitats
+
+Might be a chimera. In the the phylogenetic tree in the paper the sequence has been manually trimmed and created a clade with ATCC, which does not have an accession nr. When we checked the PRA-36 strain in the American Type Culture Collection of which ATCChava2 originates it appears to be an euglenozoa.
+
+Therefore this sequence is removed
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(AB856527)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(AB856527)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, might have a chimera in the beginning", removed_sequence_comment))
+```
+
+### HM561214_1_962_U_Labyrinthulomycetes_LAB14_X_sp
+
+Outlier in tree, poor BLAST results (91%) and poor alignment.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(HM561214)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(HM561214)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, BLAST 91% identity and below, poor alignment.)", removed_sequence_comment))
+```
+
+### KC440721_1_538_U_Stellarchytrium_dubum
+
+Outlier in tree, many indels... BLAST results lower than 95% identitiy
+
+```{r}
+ sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KC440721)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+ sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KC440721)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, BLAST lower than 95% identity and below, poor alignment due to many indels)", removed_sequence_comment))
+```
+
+### DQ834736_1_906_U_Thraustochytriaceae_X_sp
+
+Outlier in tree, BLAST per identity 92% and below.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(DQ834736)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(DQ834736)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, BLAST lower than 95% identity, poor alignment due to many indels)", removed_sequence_comment))
+```
+
+### DQ073058_1_579_U_Oblongichytrium_porteri
+
+Outlier in tree, poor alignment, BLAST mostly below 95% identity. Has an intron at the end, making it shorter than 500 bps.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(DQ073058)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(DQ073058)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, BLAST lower than 95% identity, intron at end making it shorter than 500bps)", removed_sequence_comment))
+```
+
+### GU949602_1_727_U_Amphitrema_sp
+
+Outlier in tree, poor alignment that looks choppy towards end of sequence. BLAST results are 89% identity and lower, might have an intron at the end of sequence.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(GU949602)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(GU949602)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, BLAST lower than 89% identity,possible intron at end)", removed_sequence_comment))
+```
+
+### JQ244217_1_576_U_Amphitrema_sp
+
+Outlier in tree, poor alignment that looks choppy towards end of sequence. BLAST results are 90% identity and lower, might have an intron at the end of sequence which makes the sequence shorter than 500 bps
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(JQ244217)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(JQ244217)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in tree, BLAST lower than 90% identity,intron at end making it shorter than 500 bps)", removed_sequence_comment))
+```
+
+### FJ389833_1_553_U_Aplanochytrium_minutum
+
+Outlier in tree, poor alignment, BLAST results 92% identity, 98% query cover. Might have some introns.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(FJ389833)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(FJ389833)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, BLAST lower than 90% identity,intron at end making it shorter than 500 bps)", removed_sequence_comment))
+```
+
+### KC922224_1_617_U_Sorodiplophrys_stercorea
+
+Long branching, low query cover to other sequences, chimera with metazoa
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KC922224)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KC922224)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, low query cover on BLAST, chimera with metazoa)", removed_sequence_comment))
+```
+
+### AY916656_1_597_U_Aplanochytrium_minutum
+
+Long branching, poor quality (indels)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(AY916656)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(AY916656)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, poor quality (indels))", removed_sequence_comment))
+```
+
+### AY916633_1_581_U_Aplanochytrium_minutum
+
+Long branching, poor quality (indels)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(AY916633)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(AY916633)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, poor quality (indels))", removed_sequence_comment))
+```
+
+### MW453135_1_894_U_Thraustochytrium_kinnei
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(MW453135)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(MW453135)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, 95% query cover, poor quality at end of sequence", removed_sequence_comment))
+```
+
+### MT668707_1_535_U_Thraustochytrium_kinnei
+
+Long branching, possible intron in beginning of sequence, 93% query cover.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(MT668707)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(MT668707)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, 93% query cover, possible intron in beginning of sequence", removed_sequence_comment))
+```
+
+### DQ459553_1_582_U_Thraustochytrium_kinnei
+
+Long branching, 90-88% query cover, end of alignment becomes chopped up. Possible intron.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(DQ459553)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(DQ459553)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, 93% query cover, possible intron at the end of sequence, end is poorly aligned.", removed_sequence_comment))
+```
+
+### HM369758_1_1068_U_Labyrinthulomycetes_LAB9_X_sp
+
+Long branching, 87% query cover, possible intron in beginning. 92% per. identity
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(HM369758)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(HM369758)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, 87% query cover, possible intron at the beginning of sequence, per identity 92%", removed_sequence_comment))
+```
+
+### HM228186_1_519_U_Amphitrema_sp, HM228187_1_519_U_Amphitrema_sp
+
+Long branching, sequence becomes chopped up in alignment, BLAST 89% identity, poor quality (indels)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(HM228186|HM228187)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(HM228186|HM228187)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, BLAST 89% identity, low quality (indels)", removed_sequence_comment))
+```
+
+### HQ688771_1_531_U_Labyrinthulomycetes_LAB7_X_sp
+
+Long branching, end of sequence gets chopped up in alignment, BLAST results are very good, 99% identity and 100-98% query cover. Has some indels
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(HQ688771)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(HQ688771)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, some indels and end of sequence is choppy in alignment.", removed_sequence_comment))
+```
+
+### EF100370_1_1196_U_Labyrinthula_sp
+
+Long branching, BLAST low per. identity (90%), poor quality (indels)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(EF100370)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(EF100370)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, low per. identity (90%), poor quality (indels)", removed_sequence_comment))
+```
+
+### HM227787_1_533_U_Aplanochytrium_minutum
+
+Long branching, BLAST 94% identity score, poor quality (indels)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(HM227787)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(HM227787)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, per. identity (92%), poor quality (indels)", removed_sequence_comment))
+```
+
+### KC454836_1_529_U_Aplanochytrium_minutum, KC454827_1_541_U_Aplanochytrium_minutum
+
+Long branching, BLAST 94% identity score, poor quality (indels)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KC454836|KC454827)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KC454836|KC454827)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, per. identity (94%), poor quality (indels)", removed_sequence_comment))
+```
+
+### FJ389787_1_846_U_Thraustochytriaceae_LAB17_sp
+
+Long branching, is a chimera.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(FJ389787)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(FJ389787)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, chimera", removed_sequence_comment))
+```
+
+### HQ867105_1_865_U_Labyrinthula_sp
+
+Long branching, low per identity (80%)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(HQ867105)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(HQ867105)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, low per identity (80%)", removed_sequence_comment))
+```
+
+### HQ867108_1_861_U_Schizochytrium_sp
+
+Long branching, low query coverage (82%) and low per identity. (82%)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(HQ867108)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(HQ867108)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, low query coverage (82%) and low per identity (87%)", removed_sequence_comment))
+```
+
+### EU500110_1_813_U_Labyrinthulomycetes_LAB3_X_sp
+
+Long branching, low per identity (93%)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(EU500110)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(EU500110)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, low per identity (93%)", removed_sequence_comment))
+```
+
+### JF972654_1_1170_U_Thraustochytriaceae_X_sp
+
+Long branching, low per. identity (91%), sequence appears to have many indels
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(JF972654)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(JF972654)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, low per identity (91%), low quality sequence", removed_sequence_comment))
+```
+
+### AB219774_1_588_U_Labyrinthulomycetes_LAB1_sp
+
+Long branching, low per. identity scores (94%), deemed unidentifiable in own paper. Recheck this one!
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(AB219774)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(AB219774)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, low per identity (91%), low quality sequence", removed_sequence_comment))
+```
+
+### KU757404_1_895_U_Oblongichytrium_porteri
+
+Long branching, low per. identity scores. (91%). Low query coverage (89%) appears to have some sort of inserted region (intron?)
+
+![](images/clipboard-2913708946.png)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KU757404)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KU757404)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, low per identity (91%), low quality sequence, low query cover (89%). Large intron. ", removed_sequence_comment))
+```
+
+### MF992107_1_734_U_Oblongichytrium_porteri
+
+Long branching, low per idenity (91%)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(MF992107)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(MF992107)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, low per identity (91%)", removed_sequence_comment))
+```
+
+### JQ243127_1_576_U_Thraustochytrium_roseum
+
+Long branching, falls outside of clade, has a 150 bps intron at the end of sequence. Making it shorter than 500 bps.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(JQ243127)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(JQ243127)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, 150 bps intron at end, shorter than 500 bps", removed_sequence_comment))
+```
+
+### DQ023616_1_1721_U_Schizochytrium_sp
+
+Long branching, has many indels (poor quality). 93% identity in BLAST
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(DQ023616)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(DQ023616)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, many indels, 93% identity in BLAST", removed_sequence_comment))
+```
+
+### KM196563_1_1703_U_Schizochytrium_sp
+
+Long branching, low quality sequence (indels), poor per. identity (87%)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KM196563)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(KM196563)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, many indels, 87% identity in BLAST", removed_sequence_comment))
+```
+
+### JF972654_1_1170_U_Thraustochytriaceae_X_sp
+
+Long branching, many indels, region which does not align to anything. Poor per. identity scores (91%)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(JF972654)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(JF972654)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, many indels, 91% identity in BLAST", removed_sequence_comment))
+```
+
+### FN690479_1_844_U_Thraustochytriaceae_X_sp
+
+Long branching, outlier in tree, poor BLAST results (83%), not mentioned in paper.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(FN690479)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(FN690479)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, many indels, 83% identity in BLAST", removed_sequence_comment))
+```
+
+### DQ023621_1_1721_U_Schizochytrium_sp
+
+Long branching, outlier in tree, poor BLAST results (93%), alignment has many gaps and the sequence has many indels (poor quality)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(DQ023621)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(DQ023621)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long branching, many indels, 93% identity in BLAST", removed_sequence_comment))
+```
+
+### GGCD01073072_1_1125_U_Aplanochytrium_minutum
+
+Shotgon assembly, 92% identity, extreme outlier
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(GGCD01073072)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(GGCD01073072)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "", removed_sequence_comment))
+```
+
+### LN577577_1_742_U_Amphifilaceae_X_sp
+
+Long branching, query cover at 90% or below, has some sort of intron.
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(LN577577)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(LN577577)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "", removed_sequence_comment))
+```
+
+### FJ389847_1_752_U_Aplanochytrium_blankum
+
+Outlier in clade, below 89% identity, not mentioned in paper (Fav 17)
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(FJ389847)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(FJ389847)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in clade, 89% identity", removed_sequence_comment))
+```
+
+### EF100382_1_1572_U_Labyrinthulaceae_ANT10_3_sp
+
+Long branching, regions of repeating bps, query cover below 95%, per idenityt below 94%. Possible intron
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(EF100382)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(EF100382)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Outlier in clade, 89% identity", removed_sequence_comment))
+```
+
+### AB970288_1_523_U_Amphifilaceae_X_sp
+
+Long branching, alignment is choppy, 86% identity scores when BLASTed
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(AB970288)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(AB970288)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long-branching, 86% identity", removed_sequence_comment))
+```
+
+### JQ243465_1_576_U_Oblongichytrium_porteri
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(JQ243465)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(JQ243465)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long-branching, 93% identity and 83% query coverage. Intron at the end of sequence", removed_sequence_comment))
+```
+
+### JQ242315_1_576_U_Oblongichytrium_porteri
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(JQ242315)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(JQ242315)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long-branching, 96% identity and 76% query coverage. Intron at the end of sequence", removed_sequence_comment))
+```
+
+### LN577735_1_737_U_Aplanochytrium_minutum
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(LN577735)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(LN577735)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long-branching, 98% identity and 89% query coverage. Intron at the beginning of sequence", removed_sequence_comment))
+```
+
+### FJ389768_1_561_U_Thraustochytrium_sp
+
+```{r}
+sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(FJ389768)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))        #Adding comments to the tagged sequences.  
+
+sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl("(FJ389768)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence_comment), "Long-branching, 98% identity and 89% query coverage. Intron at the beginning of sequence", removed_sequence_comment))
+```
+
+## Checking the removed sequences
+
+```{r}
+rm_seq <- sequences %>%
+  filter(removed_sequence == "x")
+
+eco_data_seqs <- merge(seqs_cluster, sequences, by = "seq_name") 
+
+eco_data_seqs <- eco_data_seqs %>%
+  filter(is.na(removed_sequence)) %>%
+  filter(sequence_length >= 500) %>%
+  select(V1, seq_name, center_seq_name,genbank_accession,gb_isolation_source,gb_lat_lon,gb_note,pr2_location,eukref_env_biome,eukref_geo_loc_name,eukref_notes,gb_publication,removed_sequence)
+```
+
+# Preparing for export
+
+## Inclusion of type sequences
+
+```{r}
+#importing type strains
+seqs_type <- read_excel("raw_data/type_seqs.xlsx")
+
+#merging the master data with the representative seqs
+seqs_rep <- merge(seqs_S, sequences, by = "seq_name")
+
+
+#missing sequences have been identified and added to the representative seqs
+
+#AB22107, AB022109, AB022115, and AF265333 have been excluded due to containing ambigueties
+
+seqs_missing <- sequences %>% filter(grepl("(MN101174|KX160008|AB244715|AB355412|AB022112|EF114348|AB973566|AB290355|KC245091|AF155209|MH319310|AF304465|MN382127|PQ059862)",pr2_accession, ignore.case = TRUE))
+
+#the missing sequences are then added back with the centroids
+seqs_rep <- bind_rows(seqs_rep,seqs_missing)
+
+#removing some duplicates again
+seqs_rep<- seqs_rep %>% distinct(seq_name, .keep_all = TRUE)
+
+```
+
+## Dataframe with the kept sequences
+
+```{r}
+seqs_kept <- seqs_rep %>%
+  #selecting sequences not tagged as removed
+  filter(is.na(removed_sequence)) %>%
+  #selecting sequenced longer than 1600
+  filter(sequence_length >= 500) %>%
+  #making a table with name and sequence
+  select(seq_name,sequence,sequence_length)
+```
+
+# Exporting sequences
+
+## Long sequences (1600 bps)
+
+```{r}
+
+seq_1600 <- seqs_rep %>%
+  #selecting sequences not tagged as removed
+  filter(is.na(removed_sequence)) %>%
+  #selecting sequenced longer than 1600
+  filter(sequence_length > 1600) %>%
+  #making a table with name and sequence
+  select(seq_name,sequence,sequence_length)
+```
+
+### Exporting sequences
+
+```{r}
+#I export my new file 
+seq_out1 <- Biostrings::DNAStringSet(seq_1600$sequence)
+
+names(seq_out1) <-seq_1600$seq_name
+
+Biostrings::writeXStringSet(seq_out1, "output/1600_seq.dfasta", compress = FALSE, width=20000)
+```
+
+## Medium sequences (\>1000 bps)
+
+### Filtering the master data
+
+```{r}
+seq_1000 <- seqs_rep %>%
+  filter(is.na(removed_sequence)) %>%
+  filter(sequence_length >= 1000 & sequence_length <= 1600) %>%
+  select(seq_name,sequence,sequence_length)
+```
+
+### Exporting sequences
+
+```{r}
+seq_out2 <- Biostrings::DNAStringSet(seq_1000$sequence)
+
+names(seq_out2) <- seq_1000$seq_name
+
+Biostrings::writeXStringSet(seq_out2, "output/1000_seq.dfasta", compress = FALSE, width=20000)
+```
+
+## Short sequences (\> 500 bps)
+
+```{r}
+seq_500 <- seqs_rep %>%
+  filter(is.na(removed_sequence)) %>%
+  filter(sequence_length >= 500 & sequence_length <= 1000) %>%
+  select(seq_name,sequence,sequence_length)
+```
+
+### Exporting sequences
+
+```{r}
+
+seq_out3 <- Biostrings::DNAStringSet(seq_500$sequence)
+
+names(seq_out3) <- seq_500$seq_name
+
+Biostrings::writeXStringSet(seq_out3, "output/500_seq.dfasta", compress = FALSE, width=20000)
+```
+
+# Reassigned taxonomy
+
+```{r}
+new_taxonomy <- read_excel("raw_data/tree_taxonomy.xlsx")
+
+#first I extract the names of the sequences I kept
+seqs_kept_names <- data.frame(seq_name = seqs_kept$seq_name) 
+
+#Then I create a new df of my kept sequences with my master_data metadata 
+old_taxonomy <- seqs_kept_names %>% 
+  inner_join(sequences, by = "seq_name")
+
+
+#I merge the old taxonomy with the new taxonomy to show the differences
+new_old_taxonomy <- new_taxonomy %>% 
+  inner_join(old_taxonomy, by = "seq_name") %>%
+  select(seq_name, sequence, pr2_main_id, pr2_accession, gb_definition, gb_organism, pr2_sample_type,supergroup, division, subdivision, class, order, family, genus, species, tree_label, class_new, order_new, family_new, genus_new, species_new)
+
+family <- new_old_taxonomy %>%
+  distinct(species_new),genus,genus_new,species,species_new)
+
+#exporting
+#write.csv2(new_old_taxonomy, file = "output/new_and_old_taxonomy.csv")
+```
+
+## Renaming sequences
+
+I rename the sequences in my tree in order to make a new phylogenetic tree which I can add the reassigned metabarcodes from Daniel later
+
+```{r}
+#First I create a new 
+rename_seqs <- merge(seqs_rep,new_old_taxonomy)
+
+rename_seqs <- rename_seqs %>%
+  mutate(seq_name_new = paste(pr2_accession, species_new, sep = "_"))
+  
+rename_seqs$seq_name_new <- rename_seqs$seq_name_new %>%
+  str_replace_all("[.]","_") %>%
+  str_remove_all("_$")
+
+test <- anti_join(seqs_rep,new_old_taxonomy)
+```
+
+### Exporting new names
+
+I am making a new tree using the new names to see if they all fall into their respective clades and this new tree will eventually be used to add the metabarcodes
+
+```{r}
+
+seq_1600_new <- rename_seqs %>%
+  #selecting sequences not tagged as removed
+  filter(is.na(removed_sequence)) %>%
+  #selecting sequenced longer than 1600
+  filter(sequence_length > 1600) %>%
+  #making a table with name and sequence
+  select(seq_name_new,sequence,sequence_length)
+
+#I export my new file 
+seq_out1_new <- Biostrings::DNAStringSet(seq_1600_new$sequence)
+
+names(seq_out1_new) <-seq_1600_new$seq_name_new
+
+Biostrings::writeXStringSet(seq_out1_new, "output/metabarcode/1600_seq.dfasta", compress = FALSE, width=20000)
+
+####
+seq_1000_new <- rename_seqs %>%
+  filter(is.na(removed_sequence)) %>%
+  filter(sequence_length >= 1000 & sequence_length <= 1600) %>%
+  select(seq_name_new,sequence,sequence_length)
+
+seq_out2_new <- Biostrings::DNAStringSet(seq_1000_new$sequence)
+
+names(seq_out2_new) <- seq_1000_new$seq_name_new
+
+Biostrings::writeXStringSet(seq_out2, "output/metabarcode/1000_seq.dfasta", compress = FALSE, width=20000)
+
+####
+
+seq_500_new <- rename_seqs %>%
+  filter(is.na(removed_sequence)) %>%
+  filter(sequence_length >= 500 & sequence_length <= 1000) %>%
+  select(seq_name_new,sequence,sequence_length)
+
+seq_out3_new <- Biostrings::DNAStringSet(seq_500_new$sequence)
+
+names(seq_out3_new) <- seq_500_new$seq_name_new
+
+Biostrings::writeXStringSet(seq_out3_new, "output/metabarcode/500_seq.dfasta", compress = FALSE, width=20000)
+```
+
+# Reassigning metabarcodes
+
+## Renaming centroid hits
+
+```{r}
+#First I change my seqs_cluster file so that the * in the center_seq_name column is replaced by the seq_name of the centroid
+seqs_cluster <- seqs_cluster %>%
+  mutate(center_seq_name = ifelse(V1=="S" & center_seq_name == "*", seq_name,center_seq_name))
+
+#Sequences labeled with an C are cluster records, summarizing information for each cluster and is unecessary. I only need the seq_name and seq_center_name column
+seqs_cluster <- seqs_cluster %>%
+  filter(V1 != "C")
+
+#I retrieve the more information on the sequences by first merging seqs_cluster to the sequences df
+seqs_cluster <- merge(seqs_cluster,sequences, by = "seq_name")
+
+#then I select the colums I need
+seqs_cluster <- seqs_cluster %>%
+  select(seq_name,center_seq_name, V1, pr2_accession, sequence, removed_sequence,pr2_main_id, domain, supergroup, division, subdivision, class, order, family, genus, species,sequence_length)
+
+#I select the necessary columns from my rename_seqs df
+rename_seqs <- rename_seqs %>%
+  select(seq_name, tree_label, class_new, order_new, family_new, genus_new, species_new)
+
+#I rename the seq_name back to center_seq_name to match the center_seq_name in my seqs_cluster file 
+rename_seqs <- rename(rename_seqs, center_seq_name = seq_name)
+
+#I join the rename_centroids to the seqs_cluster
+rename_hits <- right_join(rename_seqs,seqs_cluster, by=join_by(center_seq_name))
+
+#Now I can rename my sequence hits since the assigned taxonomy of their centroids match them. 
+rename_hits <- rename_hits %>%
+  mutate(seq_name_new = paste(pr2_accession, species_new, sep = "_"))
+  
+rename_hits$seq_name_new <- rename_hits$seq_name_new %>%
+  str_replace_all("[.]","_") %>%
+  str_remove_all("_$")
+
+#I resort the columns to make it more readable
+rename_hits <- rename_hits %>%
+  select(V1, seq_name, center_seq_name, seq_name_new, pr2_main_id, pr2_accession, sequence, sequence_length, domain, supergroup, division, subdivision, class, order, family, genus, species,tree_label, class_new, order_new, family_new, genus_new, species_new,removed_sequence)
+
+
+renamed_hits_kept <- rename_hits %>%
+  filter(is.na(removed_sequence))
+
+write.csv2(renamed_hits_kept, file = "output/reassigned_all_seqs.csv")
+```
+
+## Importing metabarcodes
+
+```{r}
+
+asvs <- read_excel("raw_data/metabarcode/asv_updated.xlsx")
+
+#for my alignment I have used all seqs classified as Labyrithulomycetes in the class column, but for my tree I am only using the seqs with class_boot >= 80
+asvs_laby <- asvs %>%
+  filter(class == "Labyrinthulomycetes") %>%
+  filter(class_boot >= 80)
+  
+
+asvs_laby <- asvs_laby %>%
+  mutate(asv_name = paste(asv_code, species, sep = "_"))
+
+asvs_laby$asv_name <- asvs_laby$asv_name %>%
+  str_remove_all("[.]")
+```
+
+## Exporting metabarcodes
+
+```{r}
+asv_out <- Biostrings::DNAStringSet(asvs_laby$sequence)
+
+names(asv_out) <- asvs_laby$asv_name
+
+Biostrings::writeXStringSet(asv_out, "output/metabarcode/asvs_laby.dfasta", compress = FALSE, width=20000)
+```

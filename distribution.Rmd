@@ -1,0 +1,372 @@
+---
+title: "Laby_dist"
+author: "Sandra"
+date: "2025-04-14"
+output: html_document
+---
+
+# Labyrinthulomycete distribution code
+
+This code is heavily based upon the work of Faith
+
+## Library
+
+```{r}
+library(stringr)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(readr)
+library(readxl)
+library(scatterpie)
+library(sf)
+```
+
+```{r}
+tax_levels <- c(
+  "domain",
+  "supergroup",
+  "division",
+  "subdivision",
+  "class",
+  "order",
+  "family",
+  "genus",
+  "species"
+)
+tax_levels_boot <- str_c(tax_levels, "_boot")
+tax_levels_updated <- c("class", "order", "family", "genus", "species")
+```
+
+## Importing data (Sandra)
+
+```{r}
+
+asv_new_taxo <- read_excel("raw_data/metabarcode/asv_updated.xlsx")
+
+samples <- read_excel("raw_data/metabarcode/samples.xlsx", guess_max = 100000)
+
+asv_abundance <- read_tsv(file = 'raw_data/metabarcode/metapr2/metapr2_ASVs_selected_abundance_Eukaryota_2025-03-13.tsv')
+
+
+```
+
+## Importing data (Daniel)
+
+```{r}
+
+# file_path <- function(file) {
+#   here::here("data", "metapr2", file)
+# }
+# 
+# asv_new_taxo <- rio::import(file_path("asv_updated.xlsx"))
+# samples <- readxl::read_xlsx(file_path("samples.xlsx"), guess_max = 100000)
+# asv_abundance <- rio::import(file_path("metapr2_ASVs_selected_abundance_Eukaryota_2025-03-13.tsv.gz"))
+
+```
+
+
+# Reassigning ASVs sequences
+
+
+```{r}
+asv_abundance <- asv_abundance %>%
+  select(!c(domain:species) ) %>%
+  left_join(asv_new_taxo)
+```
+
+
+# Data filtration
+
+```{r}
+
+#Removing fungi, metazoa and streptophyta (plants) and making 3 ecosystem types
+asv_abundance_filtered <- asv_abundance %>%
+  filter(!(subdivision %in% c("Fungi", "Metazoa")))  %>%
+  filter(!(division %in% c("Streptophyta"))) %>%
+  filter(depth_level == "surface" | depth <= 100) %>%
+  mutate(ecosystem_type = case_when(ecosystem %in% c("oceanic", "coastal") ~ ecosystem, TRUE ~ "non-marine" ))
+```
+
+# Renormalisation # NEW CODE
+
+```{r}
+reads_total_per_sample <- asv_abundance_filtered |>
+  group_by(file_code) |>
+  summarize(reads_total=sum(n_reads)) |>
+  ungroup()
+
+### I had problems with using the rename funciton, so I had to do it like this 
+colnames(asv_abundance_filtered)[which(names(asv_abundance_filtered) == "reads_total")] <- "reads_total_old"
+
+asv_abundance_filtered_corrected <- asv_abundance_filtered |>
+  left_join(reads_total_per_sample) |>
+  mutate (n_reads_pct = n_reads/reads_total*100)
+
+```
+
+# Global distribution of Laby
+
+## Preparing Presence/Absence data - NEW CODE
+
+  P_A     count
+  <chr>   <int>
+1 absent   1723
+2 present  3940
+
+```{r}
+
+laby_PAD <- asv_abundance_filtered_corrected %>% # USE CORRECTED COUNTS
+  group_by(file_code, ecosystem_type, latitude, longitude, class) %>%
+  dplyr::summarise(total_count = sum(n_reads), .groups = 'drop') %>% # Merging values of the same location
+  spread(key = class, value = total_count) %>% # Convert to wide data
+  select(file_code, ecosystem_type, latitude, longitude, Labyrinthulomycetes)%>%
+  mutate(P_A = case_when((Labyrinthulomycetes > 0) ~ "present",
+                         TRUE ~ "absent"))%>%
+  as.data.frame()
+
+#Finding how many samples Laby is present in
+PA_sum <- laby_PAD %>%
+  group_by(P_A) %>%
+  summarise(count =n())
+```
+
+## Preparing data for dominance map
+
+```{r}
+
+# Filter for class laby - CHANGED TO USE CORRECTED COUNTS
+laby_asv_abundance_filter <- filter(asv_abundance_filtered_corrected,class == "Labyrinthulomycetes")
+
+#changing all environmental seqs to one -> Labyrinthulomycetes_X
+laby_asv_abundance_filter$order <- gsub("Labyrinthulomycetes_LAB\\d+", 
+                                        "Labyrinthulomycetes_X", 
+                                        laby_asv_abundance_filter$order)
+
+#Finding the dominant order
+dominant_taxon <- laby_asv_abundance_filter %>%
+  arrange(file_code, desc(n_reads_pct)) %>%
+  group_by(file_code) %>%
+  dplyr::slice(1) %>%
+  mutate(dominant_taxon = order) %>%
+  select(file_code, latitude,longitude ,dominant_taxon,n_reads_pct)
+
+# Merge information on P/A and dominance
+dominant_merge <- laby_PAD %>%
+  left_join(select(dominant_taxon, dominant_taxon, n_reads_pct) ,   # USE DPLYR JOIN AND NOT MERGE
+            by=c('file_code'))
+
+#Finding the number of samples where each order is dominant
+taxa_sum <- dominant_merge %>%
+  group_by(dominant_taxon) %>%
+  summarise(count =n())
+
+#one file_code is >80 percent, seems like an outlier. Removed
+dominant_merge <- dominant_merge[dominant_merge$file_code != 'IC2016-127-5', ]
+```
+
+## Creating maps
+
+### Main map
+
+```{r}
+
+# Create base map
+worldmap <- map_data ("world")# From the tidyverse package
+
+base_world  <- ggplot()+ 
+  coord_fixed() +
+  xlab("") + ylab("") + 
+  geom_polygon(data=worldmap, aes(x=long, y=lat, group=group), 
+               fill="grey80")+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        panel.background = element_rect(fill = 'white', colour = 'white'), 
+        axis.line = element_line(colour = "white"), #legend.position="none",
+        axis.ticks=element_blank(), axis.text.x=element_blank(),
+        axis.text.y=element_blank())
+
+main_map <- base_world +
+  geom_jitter(data = dominant_merge, aes(x = longitude, 
+                                           y = latitude,
+                                           color = dominant_taxon,
+                                           size = n_reads_pct),  # Map size directly to n_reads_pct
+               alpha = 0.5) +
+  geom_point(data = subset(dominant_merge, is.na(dominant_taxon)), 
+             aes(x = longitude, 
+                 y = latitude,
+                 shape = 'NA'), stroke = 0.1, shape = 4, color = "black") +
+  scale_size(range = c(1, 15)) +  # Use same size range for both plot and legend
+  scale_color_viridis_d() +
+  labs(size = "% of microbial Eukaryotes", color = "Dominant taxon") +
+  guides(size = guide_legend()) +  # Keep this simple to maintain scaling
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank())
+main_map
+
+ggsave("laby_worldmap.pdf",plot = last_plot(),device = pdf, scale = 4, width = 1300, height= 1000, units = "px", dpi=320, path = 'output/metabarcode', limitsize = FALSE)
+
+```
+
+### North Europe
+
+```{r}
+
+# Assuming main_map is your initial map object
+eu_map <- main_map +
+  coord_sf(
+    xlim = c(-22.5, 28),  # Set limits for the x-axis
+    ylim = c(50, 80),     # Set limits for the y-axis
+    expand = TRUE
+  ) +
+  theme_minimal() +  # Use a minimal theme to retain axes
+  theme(
+    legend.position = "none",
+    panel.border = element_rect(fill = NA, colour = "black"),  # Add border around the panel
+    axis.title.x = element_text(margin = margin(t = 10)),  # Add some margin to the x-axis title
+    axis.title.y = element_text(margin = margin(r = 10))   # Add margin to the y-axis title
+  ) +
+  scale_x_continuous(breaks = seq(-25, 30, 5),  # Specify breaks for the longitude, ensuring 0 is included
+                     name = "Longitude") +
+  scale_y_continuous(breaks = seq(50, 80, 5),    # Specify breaks for the latitude
+                     name = "Latitude")
+
+# Print the map
+eu_map
+
+ggsave("laby_neurope.pdf",plot = last_plot(),device = pdf, scale = 2, width = 1500, height= 1300, units = "px", dpi=320, path = 'output/metabarcode', limitsize = FALSE)
+
+
+```
+
+## Ecosystem distribution
+
+### Data manipulation
+
+```{r}
+
+laby_asv_abundance_filter$species <- gsub("Labyrinthulomycetes_", "", laby_asv_abundance_filter$species) #Shortening the species names to better fit the treemap
+laby_asv_abundance_filter$species <- gsub("Thraustochytriidae_", "", laby_asv_abundance_filter$species)
+
+
+#Finding out how many ASVs is in each ecosystem,
+ASVs_tot<- laby_asv_abundance_filter %>%
+  group_by(ecosystem_type) %>%
+  summarise(tot_asv_count = n_distinct(asv_code))
+```
+
+## Scatterpie map
+
+### Scatterpie map peparing
+
+```{r}
+
+# laby_order <- laby_asv_abundance_filter %>%
+#     select(file_code,ecosystem_type,latitude,longitude,order,n_reads_pct)
+
+laby_order <- laby_asv_abundance_filter %>%
+    select(file_code,ecosystem_type,latitude,longitude,order,n_reads_pct)%>%
+    group_by(file_code,ecosystem_type,latitude,longitude,order)%>%
+    dplyr::summarise(n_reads_pct = sum(n_reads_pct),.groups = 'drop')%>% # summing values of the same file_code
+    arrange(order, desc(n_reads_pct))
+
+laby_order_list <- laby_order |>
+  select(order) |>
+  distinct() |>
+  pull(order)
+
+laby_order <- laby_order |>
+    pivot_wider(names_from = order, values_from = n_reads_pct) %>%
+    replace(is.na(.), 0) %>% 
+    right_join(select(dominant_merge, file_code, ecosystem_type, longitude, latitude, P_A),
+               by = join_by(file_code, ecosystem_type, latitude, longitude)) |> # ADDED FOR CROSSES WHERE ABSENT
+    as.data.frame() |>
+    filter(!is.na(latitude)) # REMOVE MISSING DATA
+
+```
+
+### Building map
+
+```{r}
+  ### Plotting scatterpie map of orders in class Laby (surface)
+  laby_scatter<-base_world+
+    geom_scatterpie(aes(x=longitude, y=latitude),
+                    data=filter(laby_order, P_A == "present"), # ADDED SINCE NOW WE HAVE ALSO SAMPLES WHERE ABSENT
+                    cols=laby_order_list, # BETTER CODING, USE COLUMN NAMES NOT POSITION
+                    color=NA,alpha=0.8,pie_scale = 0.3) +
+    geom_point(data = filter(laby_order, P_A == "absent"),
+             aes(x = longitude,
+                 y = latitude,
+                 shape = 'NA'), 
+             size = 1,
+             stroke = 0.1, 
+             shape = 4, 
+             color = "black") +
+    theme(legend.position = "bottom")+
+    guides(fill=guide_legend(title="Order"))+
+    facet_wrap(~ecosystem_type)+
+    scale_fill_viridis_d() 
+  
+  laby_scatter
+```
+```{r}
+ggsave("laby_scatter.pdf",plot = last_plot() ,device = pdf, scale = 2, width = 3000, height= 800, units = "px", dpi=320, path = 'output/metabarcode', limitsize = FALSE)
+```
+
+## Tree map
+
+### Tree map preparing
+
+```{r}
+# Preparing laby treemap data: order and subgroup species (surface)
+  laby_order_sub <- laby_asv_abundance_filter %>%
+    select(file_code,ecosystem_type,latitude,longitude,order,species,n_reads_pct)%>%
+    group_by(ecosystem_type,order,species)%>%  # NO NEED FOR ACROSS
+    dplyr::summarise(n_reads_pct = mean (n_reads_pct),.groups = 'drop')%>% # merging values of the same file_code ##THIS IS WHERE DANIEL CHANGES
+    drop_na()%>%
+    as.data.frame()
+  
+  #####  FIXED - YOU NEED FIRST TO SUMMARIZE BY CLASS - YOU MUST RESTART FROM ORIGINAL DF
+    # Finding average laby % for each variable
+  f_labels <- laby_asv_abundance_filter %>%
+    select(file_code, ecosystem_type ,class, n_reads_pct)%>%
+    group_by(file_code, ecosystem_type, class)%>%  # NO NEED FOR ACROSS
+    dplyr::summarise(n_reads_pct = sum (n_reads_pct),.groups = 'drop') %>%
+    group_by(ecosystem_type)%>% # NO NEED FOR ACROSS
+    dplyr::summarise(avg_reads = mean(n_reads_pct),.groups = 'drop')%>% # merging values of the same file_code
+    drop_na()%>%
+    as.data.frame()
+
+```
+
+### Building map
+
+```{r}
+    
+#Creating tree map
+laby_tree<- ggplot(laby_order_sub, aes(area = n_reads_pct, 
+                                         fill = order,
+                                         subgroup = order, 
+                                         label = species)) +
+    treemapify::geom_treemap() +
+    treemapify::geom_treemap_text(colour = "white", place = "centre", grow = FALSE) +
+    treemapify::geom_treemap_subgroup_border() +
+    treemapify::geom_treemap_subgroup_text(place = "topleft", grow = F, 
+                                           alpha = 0.5, colour = "black", 
+                                           min.size = 0) +
+    theme_bw() +
+    # title() +
+    scale_fill_viridis_d()+
+    facet_wrap(~ecosystem_type)+
+    coord_cartesian(xlim = c(50, 350), ylim = c(10, 35), clip = "off")+
+    guides(fill = "none") 
+    
+laby_tree
+```
+```{r}
+ggsave("laby_tree.pdf",plot = last_plot() ,device = pdf, scale = 2, width = 3000, height= 800, units = "px", dpi=320, path = 'output/metabarcode', limitsize = FALSE)
+```
+

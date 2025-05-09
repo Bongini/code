@@ -1,0 +1,145 @@
+---
+title: "metadata_ecosystem"
+author: "Sandra"
+date: "2025-02-25"
+output: html_document
+---
+
+# Metadata ecosystem
+
+## Packages
+
+```{r}
+library(tidyverse)
+library(readxl)
+```
+
+## Organizing metadata
+
+The ecosystem metadata has been gathered both from annotations and from reading the source literature of each sequence. Both sequence centroids and hits have metadata, thus the centroid sequences will eventually represent the metadata from both itself and it's hits. Initially, more categories were used to characterize the source in the metadata categorized file, this will be simplified. The following categories are used categorize the ecosystems.
+
+### Oceanic
+
+Marine/Seawater with no more info, Antarctica, Deep sea (below 200 m)
+
+### Coastal
+
+Seagrass, Seaweed, Fjords, Intertidal zone, Lagoon, Benthic diatom film, Bays, Corals, Estuary, Mangroves, Baltic sea
+
+### Freshwater
+
+Freshwater lake, Freshwater river, Bog,
+
+### Terrestrial
+
+Soil, Rice soil, Dung, Turfgrass, Refuse dump
+
+### Other
+
+Artificial structures, Farm reactors
+
+### Note
+
+Type sequences have been manually changed into centroids in the file to make sure their metadata is included.
+
+NOTE: The metadata_categorized file is has sequences added to it which were not part of the clustering, thus the center_seq_name column is not accurate compared to the original file.
+
+## Exporting sequences
+
+```{r}
+
+
+```
+
+## Importing metadata
+
+```{r}
+#importing categorized metadata file
+meta <- read_csv2("raw_data/metadata_categorized.csv")
+
+
+#the metadata appears to have some duplicates, these are removed
+meta <- meta %>%
+  distinct(seq_name, .keep_all = TRUE)
+
+test2 <- anti_join(eco_data_seqs,meta, by = "seq_name")
+
+test <- right_join(meta,eco_data_seqs)
+
+#write.csv2(test, file = "output/test_remove_later.csv")
+
+meta <- read_csv2("output/test_remove_later.csv")
+
+```
+
+## Editing metadata
+
+```{r}
+
+#categorizing into the 5 categorizes
+meta <- meta %>%
+  mutate(
+    pr2_ecosystem = case_when(
+      is.na(pr2_ecosystem) ~ NA_character_,
+      pr2_ecosystem %in% c("deep_sea", "oceanicA") ~ "oceanic",
+      pr2_ecosystem %in% c("estuary","coastal", "mangrove") ~ "coastal",
+      pr2_ecosystem %in% c("freshwater river", "freshwater lake","limnic","spring","bog") ~ "limnic",
+      pr2_ecosystem %in% c("terrestrial") ~ "terrestrial",
+                           TRUE ~ "other"
+    )
+  )
+
+#creating a new df with only the center_seq_name and pr2_ecosystem
+meta_eco <- meta %>%
+  select(center_seq_name, pr2_ecosystem)
+
+#creating a pivot table
+pivot_table <- meta_eco %>%
+  count(center_seq_name,pr2_ecosystem) %>%
+  pivot_wider(names_from = pr2_ecosystem, values_from = n, values_fill = 0)
+
+#I remove the NA column because it is uneccessary
+pivot_table <- pivot_table[, !names(pivot_table) %in% c("NA")]
+
+#renaming the center_seq_name column 
+names(pivot_table)[names(pivot_table) == "center_seq_name"] <- "seq_name"
+
+#checking why there are more sequences in the pivot table than the tree
+test <- pivot_table %>%
+  anti_join(seqs_kept, by = "seq_name")
+
+#gathering information on these sequences, appears that they have been removed
+test2 <- left_join(test,sequences)
+
+#checking if there are some sequences of the seqs_kept df that is missing from the pivot table
+test3 <- seqs_kept %>%
+  anti_join(pivot_table, by = "seq_name")
+
+```
+
+```{r}
+#importing excel sheet with all sequences and the labels in the tree
+new_taxonomy <- read_excel("raw_data/tree_taxonomy.xlsx")
+
+tree_label <- new_taxonomy %>% select(seq_name,tree_label)
+
+#making a new df with the tree label and pivot table data
+meta_eco_label <- left_join(tree_label,pivot_table)
+
+
+
+
+#summing the values in each category 
+meta_eco_label_sum <- meta_eco_label %>%
+  group_by(tree_label) %>%
+  summarise(
+    oceanic = sum(oceanic, na.rm = TRUE),
+    coastal = sum(coastal, na.rm = TRUE),
+    limnic = sum(limnic, na.rm = TRUE),
+    terrestrial = sum(terrestrial, na.rm = TRUE),
+    other = sum(other, na.rm = TRUE)
+  )
+
+#exporting file with data
+#write.csv2(meta_eco_label_sum, file = "output/eco_tree_data.csv")
+```
