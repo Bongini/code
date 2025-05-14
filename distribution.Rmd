@@ -47,7 +47,7 @@ asv_new_taxo <- read_excel("raw_data/metabarcode/asv_updated.xlsx")
 
 samples <- read_excel("raw_data/metabarcode/samples.xlsx", guess_max = 100000)
 
-asv_abundance <- read_tsv(file = 'raw_data/metabarcode/metapr2/metapr2_ASVs_selected_abundance_Eukaryota_2025-03-13.tsv')
+asv_abundance <- read_tsv(file = 'raw_data/metabarcode/metapr2/metapr2_ASVs_selected_abundance_Eukaryota_2025-03-13.tsv') #Download separately (more information from read.me)
 
 
 ```
@@ -103,6 +103,8 @@ colnames(asv_abundance_filtered)[which(names(asv_abundance_filtered) == "reads_t
 asv_abundance_filtered_corrected <- asv_abundance_filtered |>
   left_join(reads_total_per_sample) |>
   mutate (n_reads_pct = n_reads/reads_total*100)
+
+distinct(asv_abundance_filtered_corrected$asv_code)
 
 ```
 
