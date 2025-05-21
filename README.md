@@ -32,6 +32,10 @@ The 'metapr2_ASVs_selected_abundance_Eukaryota_2025-03-13.tsv' used in the distr
 - asv_updated.xslx: Reassigned metabarcodes from metaPR2
 - samples.xslx: Samples metadata with file_codes corresponding to asv_codes
 
+### Results
+Final alingment and phylogenetic tree used as results
+- MAFFT_alignment.fasta: Alignment of sequences used in phylogenetic analysis
+- ref_tree_iqtree_output.contree: Maximum likelhood phylogentic reference tree of Labyrinthulomycetes
 
 ### R-scripts
 Scrips of phylogenetic and ecology analysis
