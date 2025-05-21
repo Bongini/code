@@ -44,18 +44,7 @@ Type sequences have been manually changed into centroids in the file to make sur
 
 NOTE: The metadata_categorized file is has sequences added to it which were not part of the clustering, thus the center_seq_name column is not accurate compared to the original file.
 
-## Exporting sequences
-
-```{r}
-
-
-```
-
-## Importing metadata
-
-#write.csv2(test, file = "output/test_remove_later.csv")
-
-meta \<- read_csv2("output/test_remove_later.csv")
+## Importing sequences
 
 ```{r}
 #importing categorized metadata file
