@@ -1,7 +1,7 @@
 Following is the explanation of scripts, files and folders used in for the phylogenetic and ecology analysis of Labyrinthulomycetes in my master thesis. 
 
 ### output
-The files in this folder are all outputs from the R-scripts
+These files are outputs from the R-scripts
 - eco_tree_data.csv: Sum of sequences present or absent in the ecosystem types
 - reassigned_all_seqs_edit.csv: Manual edits of the reassigned_all_seqs_edit.csv
 - reassigned_all_seqs: New taxonomy of all reference sequences based on phylogeny
@@ -19,7 +19,7 @@ All of these .pdf files were imported into Affinity Designer 2 and edited.
 - laby_worldmap.pdf: output
 
 ### raw_data
-All of these files were input into R-scripts.
+These files were input into R-scripts.
 - metadata_categorized.csv: Ecosystem and habitat data for sequences
 - new_taxonomy.csv: New taxonomy for sequences in phylogenetic tree (Check if needed)
 - seqs_cluster_99.tsv: Output data from clustering at 99% with VSEARCH
@@ -33,8 +33,9 @@ The 'metapr2_ASVs_selected_abundance_Eukaryota_2025-03-13.tsv' used in the distr
 - samples.xslx: Samples metadata with file_codes corresponding to asv_codes
 
 
+### R-scripts
+Scrips of phylogenetic and ecology analysis
 
- Rmd files: 
 - distribution.Rmd: Script for global distribution map, tree map and scatterpie map.
 - metadata_ecosystem.Rmd: Script for phylogeneitc tree with clade ecosystem absence/presence data
 - phylogenetic_analysis.Rmd: Script for phylogenetic analysis pipeline
