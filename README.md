@@ -1,5 +1,9 @@
 Script and data for: master thesis
 
+## output
+- eco_tree_data.csv: Sum of sequences present or absent in the ecosystem types
+- 
+- 
 ## raw_data
 - metadata_categorized.csv: Ecosystem and habitat data for sequences
 - new_taxonomy.csv: New taxonomy for sequences in phylogenetic tree used for reassigning in PR2 (Check if needed)
@@ -13,8 +17,7 @@ The 'metapr2_ASVs_selected_abundance_Eukaryota_2025-03-13.tsv' used in the distr
 - asv_updated.xslx: Reassigned metabarcodes from metaPR2
 - samples.xslx: Samples metadata with file_codes corresponding to asv_codes
 
-## output
-- eco_tree_data.csv: 
+
 
 Rmd files: 
 - distribution.Rmd: Script for global distribution map, tree map and scatterpie map.
