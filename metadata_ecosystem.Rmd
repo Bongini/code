@@ -53,6 +53,10 @@ NOTE: The metadata_categorized file is has sequences added to it which were not 
 
 ## Importing metadata
 
+#write.csv2(test, file = "output/test_remove_later.csv")
+
+meta \<- read_csv2("output/test_remove_later.csv")
+
 ```{r}
 #importing categorized metadata file
 meta <- read_csv2("raw_data/metadata_categorized.csv")
@@ -66,10 +70,6 @@ test2 <- anti_join(eco_data_seqs,meta, by = "seq_name")
 
 test <- right_join(meta,eco_data_seqs)
 
-#write.csv2(test, file = "output/test_remove_later.csv")
-
-meta <- read_csv2("output/test_remove_later.csv")
-
 ```
 
 ## Editing metadata
@@ -81,7 +81,7 @@ meta <- meta %>%
   mutate(
     pr2_ecosystem = case_when(
       is.na(pr2_ecosystem) ~ NA_character_,
-      pr2_ecosystem %in% c("deep_sea", "oceanicA") ~ "oceanic",
+      pr2_ecosystem %in% c("deep_sea", "oceanic") ~ "oceanic",
       pr2_ecosystem %in% c("estuary","coastal", "mangrove") ~ "coastal",
       pr2_ecosystem %in% c("freshwater river", "freshwater lake","limnic","spring","bog") ~ "limnic",
       pr2_ecosystem %in% c("terrestrial") ~ "terrestrial",

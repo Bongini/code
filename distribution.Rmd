@@ -39,7 +39,7 @@ tax_levels_boot <- str_c(tax_levels, "_boot")
 tax_levels_updated <- c("class", "order", "family", "genus", "species")
 ```
 
-## Importing data (Sandra)
+## Importing data
 
 ```{r}
 
@@ -47,22 +47,9 @@ asv_new_taxo <- read_excel("raw_data/metabarcode/asv_updated.xlsx")
 
 samples <- read_excel("raw_data/metabarcode/samples.xlsx", guess_max = 100000)
 
+#Download from metapr2 website
 asv_abundance <- read_tsv(file = 'raw_data/metabarcode/metapr2/metapr2_ASVs_selected_abundance_Eukaryota_2025-03-13.tsv') #Download separately (more information from read.me)
 
-
-```
-
-## Importing data (Daniel)
-
-```{r}
-
-# file_path <- function(file) {
-#   here::here("data", "metapr2", file)
-# }
-# 
-# asv_new_taxo <- rio::import(file_path("asv_updated.xlsx"))
-# samples <- readxl::read_xlsx(file_path("samples.xlsx"), guess_max = 100000)
-# asv_abundance <- rio::import(file_path("metapr2_ASVs_selected_abundance_Eukaryota_2025-03-13.tsv.gz"))
 
 ```
 
@@ -326,18 +313,17 @@ ggsave("laby_scatter.pdf",plot = last_plot() ,device = pdf, scale = 2, width = 3
 # Preparing laby treemap data: order and subgroup species (surface)
   laby_order_sub <- laby_asv_abundance_filter %>%
     select(file_code,ecosystem_type,latitude,longitude,order,species,n_reads_pct)%>%
-    group_by(ecosystem_type,order,species)%>%  # NO NEED FOR ACROSS
-    dplyr::summarise(n_reads_pct = mean (n_reads_pct),.groups = 'drop')%>% # merging values of the same file_code ##THIS IS WHERE DANIEL CHANGES
+    group_by(ecosystem_type,order,species)%>% 
+    dplyr::summarise(n_reads_pct = mean (n_reads_pct),.groups = 'drop')%>% # merging values of the same file_code
     drop_na()%>%
     as.data.frame()
   
-  #####  FIXED - YOU NEED FIRST TO SUMMARIZE BY CLASS - YOU MUST RESTART FROM ORIGINAL DF
     # Finding average laby % for each variable
   f_labels <- laby_asv_abundance_filter %>%
     select(file_code, ecosystem_type ,class, n_reads_pct)%>%
-    group_by(file_code, ecosystem_type, class)%>%  # NO NEED FOR ACROSS
+    group_by(file_code, ecosystem_type, class)%>%  
     dplyr::summarise(n_reads_pct = sum (n_reads_pct),.groups = 'drop') %>%
-    group_by(ecosystem_type)%>% # NO NEED FOR ACROSS
+    group_by(ecosystem_type)%>% 
     dplyr::summarise(avg_reads = mean(n_reads_pct),.groups = 'drop')%>% # merging values of the same file_code
     drop_na()%>%
     as.data.frame()

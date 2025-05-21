@@ -31,7 +31,7 @@ Has two introns which was removed
 
 ### MN382127_1_1072_UC_Phycophthorum_isakeiti
 
-Had ambigueties from 1073-1724. So I only kept the beginning of the sequence to avoid the ambigueties.
+Had ambiguities from 1073-1724. So I only kept the beginning of the sequence to avoid the ambigueties.
 
 ```{r}
 
@@ -100,18 +100,17 @@ seqs_cluster <- seqs_cluster %>%
 ### All metagenomes
 
 ```{r}
+#Removing metagenomes
 sequences <- sequences %>%
   mutate(removed_sequence = ifelse(grepl("metagenome", gb_definition, ignore.case = TRUE), "x", NA))
-
+#Comment
 sequences <- sequences %>%
   mutate(removed_sequence_comment = ifelse(grepl("metagenome", gb_definition, ignore.case = TRUE), "metagenome", NA))
 ```
 
 ### All KF66 and KF68
 
-All the KF66 and KF88 sequences originated from the same study done in India.
-
-Omega-3 fatty acid production from enzyme saccharified hemp hydrolysate using a novel marine thraustochytrid strain by Gupta,A., Abraham,R.E., Barrow,C.J. and Puri,M.
+All the KF66 and KF88 sequences originated from the same study
 
 ```{r}
 #Tagging the KF66/KF68 sequences with x in the removed_sequence column WITHOUT replacing the current x
@@ -130,11 +129,7 @@ sequences <- sequences %>%
 
 ### All JX9938
 
-All originate from the same paper, done by the same authors of the KF66 sequences.
-
 The sequences have long regions of repeating basepairs, are often outliers or aligns strangely. The BLAST results show around 96% identity, sequences appear to have an intron at the end. (82% query cover to other non-JX9938 sequences).
-
-Pollen baiting facilitates the isolation of marine thraustochytrids with potential in omega-3 and biodiesel by Gupta,A., Abraham,R.E., Barrow,C.J. and Puri,M.production
 
 ```{r}
 sequences <- sequences %>%
@@ -151,11 +146,9 @@ sequences <- sequences %>%
 
 ### All OK244
 
-All originating from the same study in India and in the trial 2 tree it made a strange clade together with long branches. BLAST results are around 90% identity.
+All originating from the same study and in the trial 2 tree it made a strange clade together with long branches. BLAST results are around 90% identity.
 
 Decided to remove them all.
-
-![](images/clipboard-2862485564.png)
 
 ```{r}
 sequences <- sequences %>%
@@ -172,31 +165,23 @@ sequences <- sequences %>%
 
 ### KJ762899_1_1781_U_Aplanochytrium_kerguelense
 
-Outlier in tree. BLAST results showed low per. identity (\<90%), all other results were uncultured eukaryote clone from the same study.
-
-Article: Investigating Microbial Eukaryotic Diversity from a Global Census: Insights from a Comparison of Pyrotag and Full-Length Sequences of 18S rRNA Genes
+Outlier in tree. BLAST results showed low per. identity (\<90%), all other results were uncultured eukaryote clone from the same study
 
 ### AB695493_1_1790_U_Labyrinthulaceae_ANT10_3_sp
 
-Outlier in tree. BLAST results showed low per. identity. Results were all other unclultured eukaryotes or not Labyrinthulomycetes.
-
-Article: Eukaryotic phylotypes in aquatic moss pillars inhabiting a freshwater lake in East Antarctica, based on 18S rRNA gene analysis
+Outlier in tree. BLAST results showed low per. identity. Results were all other uncultured eukaryotes or not Labyrinthulomycetes.
 
 ### KX771891_1_1723_U_Amphifila_sp
 
 Outlier in tree. BLAST results showed low per. identity (\<83%). Results were all other unclultured eukaryotes or not Labyrinthulomycetes. Direct submission
 
-Article: Microbial communities of the disappearing periglacial environment on top of Mount Kilimanjaro
-
 ### AY180038_1_1725_U_Thraustochytriaceae_X_sp
 
-Outlier in tree. BLAST results showed low per. identity (under 80%). From a very old study (2003). Uncultured eukaryote
-
-Article: Novel eukaryotic lineages inferred from small-subunit rRNA analyses of oxygen-depleted marine environments
+Outlier in tree. BLAST results showed low per. identity (under 80%). Uncultured eukaryote
 
 ### GM664571_1_1753_U_Aurantiochytrium_limacinum
 
-Outlier in tree. BLAST results did not show query and the results showed low per. identitiy. No article, just a patent from India.
+Outlier in tree. BLAST results did not show query and the results showed low per. identity.
 
 ```{r}
 sequences <- sequences %>%
@@ -247,7 +232,7 @@ sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl
 
 ### KX533307_1_1352_U_Oblongichytrium_porteri, KT277636_1_1109_U_Oblongichytrium_porteri
 
-Extreme outlier in tree. Poor BLAST results. From a Chinese paper.
+Extreme outlier in tree. Poor BLAST results.
 
 ```{r}
 sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KX533307|KT277636)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))  
@@ -267,7 +252,7 @@ sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl
 
 ### DQ834738_1_1539_U_Thraustochytriaceae_X_sp, DQ834732_1_1175_U_Thraustochytriaceae_X_sp, DQ834737_1_1395_U_Thraustochytriaceae_X_sp, DQ834733_1_1419_U_Thraustochytriaceae_X_sp
 
-All outliers together in a very defined clade. Poor BLAST results, all come from the same university in Thailand in 2006.... Directly submitted and no paper. Some appear to have a intron in the beginning.
+All outliers together in a very defined clade. Poor BLAST results, all come from the same university.... Directly submitted and no paper. Some appear to have a intron in the beginning.
 
 ```{r}
 sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(DQ834738|DQ834732|DQ834737|DQ834733)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))    
@@ -278,7 +263,7 @@ sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl
 
 ### MH059486_1_1333_U_Aurantiochytrium_limacinum
 
-Outlier in tree, poor BLAST results. Indian study
+Outlier in tree, poor BLAST results.
 
 ```{r}
 sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(MH059486)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))    
@@ -299,9 +284,7 @@ sequences <- sequences %>%   mutate(removed_sequence_comment = ifelse(     grepl
 
 ### KU565329_1_1123_U_Aurantiochytrium_limacinum
 
-Outlier in tree, not the best blast results considering there are so many Aurantiochytrium sequences. Clustered together with the DQ834--, but even after removing those sequences the alignment still looked off, it has a huge gap.
-
-From the paper Strains of heterotrophic microalgae rich in PUFA isolated from Mangalavanam mangrove habitat, Cochin, Kerala.
+Outlier in tree, not the best blast results considering there are so many *Aurantiochytrium* sequences. Clustered together with the DQ834--, but even after removing those sequences the alignment still looked off, it has a huge gap.
 
 ```{r}
 sequences <- sequences %>%   mutate(removed_sequence = ifelse(grepl("(KU565329)", pr2_accession, ignore.case = TRUE) & is.na(removed_sequence),"x", removed_sequence))      
@@ -1311,8 +1294,6 @@ names(seq_out3_new) <- seq_500_new$seq_name_new
 Biostrings::writeXStringSet(seq_out3_new, "output/metabarcode/500_seq.dfasta", compress = FALSE, width=20000)
 ```
 
-# Reassigning metabarcodes
-
 ## Renaming centroid hits
 
 ```{r}
@@ -1360,31 +1341,4 @@ renamed_hits_kept <- rename_hits %>%
 write.csv2(renamed_hits_kept, file = "output/reassigned_all_seqs.csv")
 ```
 
-## Importing metabarcodes
-
-```{r}
-
-asvs <- read_excel("raw_data/metabarcode/asv_updated.xlsx")
-
-#for my alignment I have used all seqs classified as Labyrithulomycetes in the class column, but for my tree I am only using the seqs with class_boot >= 80
-asvs_laby <- asvs %>%
-  filter(class == "Labyrinthulomycetes") %>%
-  filter(class_boot >= 80)
-  
-
-asvs_laby <- asvs_laby %>%
-  mutate(asv_name = paste(asv_code, species, sep = "_"))
-
-asvs_laby$asv_name <- asvs_laby$asv_name %>%
-  str_remove_all("[.]")
-```
-
-## Exporting metabarcodes
-
-```{r}
-asv_out <- Biostrings::DNAStringSet(asvs_laby$sequence)
-
-names(asv_out) <- asvs_laby$asv_name
-
-Biostrings::writeXStringSet(asv_out, "output/metabarcode/asvs_laby.dfasta", compress = FALSE, width=20000)
-```
+## 
